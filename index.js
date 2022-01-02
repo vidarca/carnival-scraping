@@ -57,7 +57,7 @@ const getInfoHomePage = async (browser) => {
   });
 }
 
-const getDataFromPageTypeOne = async (page) => await page.evaluate(async () => {
+const getDataFromPageTypeOne = async (page, wait) => await page.evaluate(async (wait) => {
   const temp = {
     description: [],
     grossTonnage: 0,
@@ -73,6 +73,8 @@ const getDataFromPageTypeOne = async (page) => await page.evaluate(async () => {
   var waitFor = (delay) => {
     return new Promise(resolve => setTimeout(resolve, delay));
   }
+  var waitTime = wait;
+
   const readMoreDescriptionBtn = document.querySelector(".ccl-btn-read-more");
   readMoreDescriptionBtn.click();
   const descriptionElement = document.querySelectorAll(".ccl-read-more.clone blockquote p");
@@ -98,10 +100,10 @@ const getDataFromPageTypeOne = async (page) => await page.evaluate(async () => {
       img: ""
     }
     deck.querySelector("a[role=application]").click();
-    await waitFor(10000);
+    await waitFor(waitTime);
     deckData.deckNumber = Number(deck.querySelector("a[role=application] span").innerText);
     deckData.name = deck.querySelector("a[role=application]").innerText;
-    deckData.img = iframe.contentWindow.document.querySelector("img.mapster_el").src;
+    deckData.img = iframe.contentWindow.document.querySelector("img.mapster_el")?.src;
 
     deckFeatures = iframe.contentWindow.document.querySelectorAll(".deck-legend ul.galleries li");
     deckStaterooms = iframe.contentWindow.document.querySelectorAll(".deck-legend ul.staterooms li");
@@ -184,10 +186,10 @@ const getDataFromPageTypeOne = async (page) => await page.evaluate(async () => {
   });
 
   return temp;
-});
+}, wait);
 
-const getDataFromPageTypeTwo = async (page) => {
-  const basicInfo = await page.evaluate(async () => {
+const getDataFromPageTypeTwo = async (page, wait) => {
+  const basicInfo = await page.evaluate(async (wait) => {
     const temp = {
       description: [],
       deckZones: [],
@@ -198,13 +200,14 @@ const getDataFromPageTypeTwo = async (page) => {
     var waitFor = (delay) => {
       return new Promise(resolve => setTimeout(resolve, delay));
     }
+    var waitTime = wait;
 
     const shipDataElements = document.querySelectorAll(".ships-gallery-slide");
     const pageNavs = document.querySelectorAll("#ships-main-nav h2 a");
     let index = 0;
     for (const el of shipDataElements) {
       pageNavs[index].click();
-      await waitFor(1000);
+      await waitFor(waitTime/2);
       const articles = el.querySelectorAll("article");
       var getBasicData = (propertyName, articleElement, articleIndex) => {
         let images = el.querySelectorAll("figure.ships-gallery-tile__hero");
@@ -223,34 +226,28 @@ const getDataFromPageTypeTwo = async (page) => {
       }
       articles.forEach((a, articleIndex) => {
         if (a.querySelector(".ships-gallery-tile__content h3.ships-gallery-tile__title")) {
-          switch (index) {
-            case 0:
-              getBasicData("description", a, articleIndex);
-              break;
-            case 1:
-              getBasicData("deckZones", a, articleIndex);
-              break;
-            case 2:
-              getBasicData("onboardActivities", a, articleIndex);
-              break;
-            case 3:
-              getBasicData("onboardDining", a, articleIndex);
-              break;
-            case 4:
-              getBasicData("staterooms", a, articleIndex);
-              break;
+          if (a.id.includes("meet-")) {
+            getBasicData("description", a, articleIndex);
+          } else if (a.id.includes("zones")) {
+            getBasicData("deckZones", a, articleIndex);
+          } else if (a.id.includes("onboard-activities")) {
+            getBasicData("onboardActivities", a, articleIndex);
+          } else if (a.id.includes("dining")) {
+            getBasicData("onboardDining", a, articleIndex);
+          } else if (a.id.includes("staterooms")) {
+            getBasicData("staterooms", a, articleIndex);
           }
         }
       });
       index++;
     };
 
-    pageNavs[5].click();
-    await waitFor(1000);
+    window.location.hash = "#deck-plans";
+    await waitFor(waitTime/2);
     document.querySelector(".deck-plans .ships-button").click();
 
     return temp;
-  });
+  }, wait);
 
   await new Promise((resolve) => {
     validateElement = async () => {
@@ -269,13 +266,14 @@ const getDataFromPageTypeTwo = async (page) => {
     const interval = setInterval(validateElement, 500);
   });
 
-  const deckData = await page.evaluate(async () => {
+  const deckData = await page.evaluate(async (wait) => {
     const temp = {
       deckData: [],
     };
     var waitFor = (delay) => {
       return new Promise(resolve => setTimeout(resolve, delay));
     }
+    var waitTime = wait;
 
     const iframe = document.querySelector(".ships-deck-plan-slide__iframe iframe");
     const cruiseDecks = iframe.contentWindow.document.querySelectorAll(".ship-decks ul[role=presentation] li[role=listitem]");
@@ -287,10 +285,10 @@ const getDataFromPageTypeTwo = async (page) => {
         img: ""
       }
       deck.querySelector("a[role=application]").click();
-      await waitFor(10000);
+      await waitFor(waitTime);
       deckData.deckNumber = Number(deck.querySelector("a[role=application] span").innerText);
       deckData.name = deck.querySelector("a[role=application]").innerText;
-      deckData.img = iframe.contentWindow.document.querySelector("img.mapster_el").src;
+      deckData.img = iframe.contentWindow.document.querySelector("img.mapster_el")?.src;
 
       deckFeatures = iframe.contentWindow.document.querySelectorAll(".deck-legend ul.galleries li");
       deckStaterooms = iframe.contentWindow.document.querySelectorAll(".deck-legend ul.staterooms li");
@@ -314,7 +312,7 @@ const getDataFromPageTypeTwo = async (page) => {
       temp.deckData.push(deckData);
     }
     return temp;
-  });
+  }, wait);
 
   return {
     ...basicInfo,
@@ -322,7 +320,7 @@ const getDataFromPageTypeTwo = async (page) => {
   }
 }
 
-const getEachCruiseData = async (browser, dataList, unlimited, limit) => {
+const getEachCruiseData = async (browser, dataList, unlimited, limit, waitTime) => {
 
   return new Promise(async (resolve, reject) => {
 
@@ -366,9 +364,9 @@ const getEachCruiseData = async (browser, dataList, unlimited, limit) => {
             };
             const interval = setInterval(validateElement, 500);
           });
-          cruiseData = await getDataFromPageTypeOne(page);
+          cruiseData = await getDataFromPageTypeOne(page, waitTime);
         } else {
-          cruiseData = await getDataFromPageTypeTwo(page);
+          cruiseData = await getDataFromPageTypeTwo(page, waitTime);
         }
 
         page.close();
@@ -384,23 +382,38 @@ const getEachCruiseData = async (browser, dataList, unlimited, limit) => {
           if (i >= index && i < index + maxValue) {
 
             lastValue = index + maxValue;
-            getData(data).then((cruiseData) => {
+            getData(data)
+              .then((cruiseData) => {
 
-              dataList[i] = {
-                ...dataList[i],
-                ...cruiseData
-              };
+                dataList[i] = {
+                  ...dataList[i],
+                  ...cruiseData
+                };
 
-              index++;
+                index++;
 
-              if (index < dataList.length && index === lastValue) {
-                callGetData();
-              }
+                if (index < dataList.length && index === lastValue) {
+                  callGetData();
+                }
 
-              if (index === dataList.length) {
-                resolve();
-              }
-            });
+                if (index === dataList.length) {
+                  resolve();
+                }
+              })
+              .catch((err) => {
+                console.log(err);
+                console.warn("Error getting cruise" + data.name)
+
+                index++;
+
+                if (index < dataList.length && index === lastValue) {
+                  callGetData();
+                }
+
+                if (index === dataList.length) {
+                  resolve();
+                }
+              });
           }
         });
       }
@@ -420,17 +433,22 @@ const getEachCruiseData = async (browser, dataList, unlimited, limit) => {
   try {
     let unlimited = false;
     let limit = 1;
+    let waitTime = 5000;
+
     process.argv.forEach(function (val) {
       if (val.includes("unlimited")) {
         unlimited = true;
       }
-      if (val.includes("limit")){
-        limit = val.split("=")[1];
+      if (val.includes("limit")) {
+        limit = Number(val.split("=")[1]);
+      }
+      if (val.includes("waitTime")){
+        waitTime = Number(val.split("=")[1]);
       }
     });
 
     const browser = await puppeteer.launch({
-      headless: true,
+      headless: false,
       defaultViewport: null,
       args: [
         '--window-size=1920,1080'
@@ -439,7 +457,7 @@ const getEachCruiseData = async (browser, dataList, unlimited, limit) => {
 
     let cruiseShipsData = await getInfoHomePage(browser);
 
-    await getEachCruiseData(browser, cruiseShipsData, unlimited, limit);
+    await getEachCruiseData(browser, cruiseShipsData, unlimited, limit, waitTime);
 
     fs.write("data.json", JSON.stringify(cruiseShipsData), "utf8");
 
