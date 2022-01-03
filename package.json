@@ -4,8 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "scraping": "node index.js",
-    "scraping:unlimited": "node index.js --unlimited"
+    "scraping": "node index.js"
   },
   "author": "",
   "license": "ISC",

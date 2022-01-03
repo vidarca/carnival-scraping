@@ -1,9 +1,7 @@
 const puppeteer = require("puppeteer");
 const fs = require("fs");
 
-const getInfoHomePage = async (browser) => {
-
-  const page = await browser.newPage();
+const getInfoHomePage = async (page) => {
 
   await page.goto("https://www.carnival.com/cruise-ships.aspx", {
     waitUntil: "load",
@@ -57,280 +55,339 @@ const getInfoHomePage = async (browser) => {
   });
 }
 
-const getDataFromPageTypeOne = async (page, wait) => await page.evaluate(async (wait) => {
-  const temp = {
-    description: [],
-    grossTonnage: 0,
-    guestCapacity: 0,
-    lengthFt: 0,
-    onboardCrew: 0,
-    deckData: [],
-    staterooms: [],
-    onboardActivities: [],
-    onboardDining: [],
-  };
+const getDataFromPageTypeOne = async (page) => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      await Promise.all([
+        page.waitForSelector(".ccl-btn-read-more"),
+        page.waitForSelector(".ccl-read-more.clone blockquote p"),
+        page.waitForSelector("ul.info li"),
+        page.waitForSelector("#deckplans"),
+        page.waitForSelector("div.rooms"),
+        page.waitForSelector("[data-oba-carousel=ship_related_onboard] .slick-track a"),
+        page.waitForSelector("[data-oba-carousel=ship_related_dining] .slick-track a")
+      ]).catch(() => reject({}));
 
-  var waitFor = (delay) => {
-    return new Promise(resolve => setTimeout(resolve, delay));
-  }
-  var waitTime = wait;
+      const basicInfo = await page.evaluate(async () => {
+        const temp = {
+          description: [],
+          grossTonnage: 0,
+          guestCapacity: 0,
+          lengthFt: 0,
+          onboardCrew: 0,
+          staterooms: [],
+          onboardActivities: [],
+          onboardDining: [],
+        };
 
-  const readMoreDescriptionBtn = document.querySelector(".ccl-btn-read-more");
-  readMoreDescriptionBtn.click();
-  const descriptionElement = document.querySelectorAll(".ccl-read-more.clone blockquote p");
+        const readMoreDescriptionBtn = document.querySelector(".ccl-btn-read-more");
+        readMoreDescriptionBtn.click();
+        const descriptionElement = document.querySelectorAll(".ccl-read-more.clone blockquote p");
 
-  descriptionElement.forEach(el => {
-    temp.description.push(el.innerText);
-  });
-
-  const infoList = document.querySelectorAll("ul.info li");
-
-  temp.grossTonnage = Number(infoList[0].querySelector("strong").innerText.replace(',', ''));
-  temp.guestCapacity = Number(infoList[1].querySelector("strong").innerText.replace(',', ''));
-  temp.lengthFt = Number(infoList[2].querySelector("strong").innerText.replace(',', ''));
-  temp.onboardCrew = Number(infoList[3].querySelector("strong").innerText.replace(',', ''));
-
-  const iframe = document.querySelector("#deckPlansIframe");
-  const cruiseDecks = iframe.contentWindow.document.querySelectorAll(".ship-decks ul[role=presentation] li[role=listitem]");
-
-  for (const deck of cruiseDecks) {
-    const deckData = {
-      deckNumber: 0,
-      name: "",
-      img: ""
-    }
-    deck.querySelector("a[role=application]").click();
-    await waitFor(waitTime);
-    deckData.deckNumber = Number(deck.querySelector("a[role=application] span").innerText);
-    deckData.name = deck.querySelector("a[role=application]").innerText;
-    deckData.img = iframe.contentWindow.document.querySelector("img.mapster_el")?.src;
-
-    deckFeatures = iframe.contentWindow.document.querySelectorAll(".deck-legend ul.galleries li");
-    deckStaterooms = iframe.contentWindow.document.querySelectorAll(".deck-legend ul.staterooms li");
-    if (deckFeatures.length) {
-      deckData.features = [];
-      deckFeatures.forEach(f => {
-        deckData.features.push({
-          name: f.querySelector("a").innerText
+        descriptionElement.forEach(el => {
+          temp.description.push(el.innerText);
         });
-      });
-    }
-    if (deckStaterooms.length) {
-      deckData.staterooms = [];
-      deckStaterooms.forEach(s => {
-        deckData.staterooms.push({
-          type: s.querySelector("span").innerText,
-          name: s.innerText
-        });
-      });
-    }
-    temp.deckData.push(deckData);
-  }
 
-  const staterooms = document.querySelectorAll("div.rooms");
-  staterooms.forEach(s => {
-    const stateroom = {
-      name: "",
-      img: [],
-      description: ""
-    };
-    const imgs = s.querySelectorAll("slick .slick-slide:not(.slick-cloned) .slide div");
+        const infoList = document.querySelectorAll("ul.info li");
 
-    imgs.forEach(i => {
-      stateroom.img.push(window.location.hostname + i.style.backgroundImage.slice(4, -1).replace(/"/g, ""));
-    });
-    stateroom.name = s.querySelector("h2.title").innerText;
-    stateroom.description = s.querySelectorAll(".caption")[1]?.innerHTML.replace(/<strong>|<\/strong>|\\n/, "");
+        temp.grossTonnage = Number(infoList[0].querySelector("strong").innerText.replace(',', ''));
+        temp.guestCapacity = Number(infoList[1].querySelector("strong").innerText.replace(',', ''));
+        temp.lengthFt = Number(infoList[2].querySelector("strong").innerText.replace(',', ''));
+        temp.onboardCrew = Number(infoList[3].querySelector("strong").innerText.replace(',', ''));
 
-    temp.staterooms.push(stateroom);
-  });
+        const staterooms = document.querySelectorAll("div.rooms");
+        staterooms.forEach(s => {
+          const stateroom = {
+            name: "",
+            img: [],
+            description: ""
+          };
+          const imgs = s.querySelectorAll("slick .slick-slide:not(.slick-cloned) .slide div");
 
-  const onboardActivities = document.querySelectorAll("[data-oba-carousel=ship_related_onboard] .slick-track a");
-  onboardActivities.forEach(el => {
-    const activity = {
-      link: "",
-      name: "",
-      img: "",
-      type: "",
-    };
-    activity.link = el.href;
-    activity.name = el.querySelector(".oba-car-item-desc-title")?.innerText;
-    activity.type = el.querySelector(".oba-car-item-desc-incl")?.innerText;
-    activity.img = window.location.hostname + el.querySelector(".oba-car-item-wrap .oba-car-item-img").style.backgroundImage.slice(4, -1).replace(/"/g, "");
-    temp.onboardActivities.push({
-      link: el.href,
-      name: el.querySelector(".oba-car-item-desc-title")?.innerText,
-      type: el.querySelector(".oba-car-item-desc-incl")?.innerText,
-      img: window.location.hostname + el.querySelector("[role=img]").style.backgroundImage.slice(4, -1).replace(/"/g, ""),
-    })
-  });
-
-  const onboardDining = document.querySelectorAll("[data-oba-carousel=ship_related_dining] .slick-track a");
-  onboardDining.forEach(el => {
-    const activity = {
-      link: "",
-      name: "",
-      img: "",
-      type: "",
-    };
-    activity.link = el.href;
-    activity.name = el.querySelector(".oba-car-item-desc-title")?.innerText;
-    activity.type = el.querySelector(".oba-car-item-desc-incl")?.innerText;
-    activity.img = window.location.hostname + el.querySelector(".oba-car-item-wrap .oba-car-item-img").style.backgroundImage.slice(4, -1).replace(/"/g, "");
-    temp.onboardDining.push({
-      link: el.href,
-      name: el.querySelector(".oba-car-item-desc-title")?.innerText,
-      type: el.querySelector(".oba-car-item-desc-incl")?.innerText,
-      img: window.location.hostname + el.querySelector("[role=img]").style.backgroundImage.slice(4, -1).replace(/"/g, ""),
-    })
-  });
-
-  return temp;
-}, wait);
-
-const getDataFromPageTypeTwo = async (page, wait) => {
-  const basicInfo = await page.evaluate(async (wait) => {
-    const temp = {
-      description: [],
-      deckZones: [],
-      staterooms: [],
-      onboardActivities: [],
-      onboardDining: [],
-    };
-    var waitFor = (delay) => {
-      return new Promise(resolve => setTimeout(resolve, delay));
-    }
-    var waitTime = wait;
-
-    const shipDataElements = document.querySelectorAll(".ships-gallery-slide");
-    const pageNavs = document.querySelectorAll("#ships-main-nav h2 a");
-    let index = 0;
-    for (const el of shipDataElements) {
-      pageNavs[index].click();
-      await waitFor(waitTime / 2);
-      const articles = el.querySelectorAll("article");
-      var getBasicData = (propertyName, articleElement, articleIndex) => {
-        let images = el.querySelectorAll("figure.ships-gallery-tile__hero");
-        const introSlide = el.querySelectorAll(".ships-intro-slide");
-        if (introSlide.length) {
-          images = [
-            introSlide[0],
-            ...images
-          ]
-        }
-        temp[propertyName].push({
-          title: articleElement.querySelector(".ships-gallery-tile__content h3.ships-gallery-tile__title").innerText,
-          info: articleElement.querySelector(".ships-gallery-tile__content .ships-gallery-tile__description").innerText,
-          img: window.location.hostname + images[articleIndex].style.backgroundImage.slice(4, -1).replace(/"/g, ""),
-        });
-      }
-      articles.forEach((a, articleIndex) => {
-        if (a.querySelector(".ships-gallery-tile__content h3.ships-gallery-tile__title")) {
-          if (a.id.includes("meet-")) {
-            getBasicData("description", a, articleIndex);
-          } else if (a.id.includes("zones")) {
-            getBasicData("deckZones", a, articleIndex);
-          } else if (a.id.includes("onboard-activities")) {
-            getBasicData("onboardActivities", a, articleIndex);
-          } else if (a.id.includes("dining")) {
-            getBasicData("onboardDining", a, articleIndex);
-          } else if (a.id.includes("staterooms")) {
-            getBasicData("staterooms", a, articleIndex);
-          }
-        }
-      });
-      index++;
-    };
-
-    window.location.hash = "#deck-plans";
-    await waitFor(waitTime / 2);
-    document.querySelector(".deck-plans .ships-button").click();
-
-    return temp;
-  }, wait);
-
-  await new Promise((resolve, reject) => {
-    let times = 0;
-    validateElement = async () => {
-      let resolved;
-      try {
-        resolved = await page.evaluate(() => {
-          const iframe = document.querySelector(".ships-deck-plan-slide__iframe iframe");
-          if (iframe && iframe.contentWindow.document.querySelector(".ship-decks ul[role=presentation] li[role=listitem]")) {
-            return true;
-          }
-          return false;
-        });
-      } catch (error) {
-
-      }
-      times++;
-      if (resolved) {
-        clearInterval(interval);
-        resolve();
-      }
-      if (times * 500 > 60000) {
-        reject();
-      }
-    };
-    const interval = setInterval(validateElement, 500);
-  });
-
-  const deckData = await page.evaluate(async (wait) => {
-    const temp = {
-      deckData: [],
-    };
-    var waitFor = (delay) => {
-      return new Promise(resolve => setTimeout(resolve, delay));
-    }
-    var waitTime = wait;
-
-    const iframe = document.querySelector(".ships-deck-plan-slide__iframe iframe");
-    const cruiseDecks = iframe.contentWindow.document.querySelectorAll(".ship-decks ul[role=presentation] li[role=listitem]");
-
-    for (const deck of cruiseDecks) {
-      const deckData = {
-        deckNumber: 0,
-        name: "",
-        img: ""
-      }
-      deck.querySelector("a[role=application]").click();
-      await waitFor(waitTime);
-      deckData.deckNumber = Number(deck.querySelector("a[role=application] span").innerText);
-      deckData.name = deck.querySelector("a[role=application]").innerText;
-      deckData.img = iframe.contentWindow.document.querySelector("img.mapster_el")?.src;
-
-      deckFeatures = iframe.contentWindow.document.querySelectorAll(".deck-legend ul.galleries li");
-      deckStaterooms = iframe.contentWindow.document.querySelectorAll(".deck-legend ul.staterooms li");
-      if (deckFeatures.length) {
-        deckData.features = [];
-        deckFeatures.forEach(f => {
-          deckData.features.push({
-            name: f.querySelector("a").innerText
+          imgs.forEach(i => {
+            stateroom.img.push(window.location.hostname + i.style.backgroundImage.slice(4, -1).replace(/"/g, ""));
           });
-        });
-      }
-      if (deckStaterooms.length) {
-        deckData.staterooms = [];
-        deckStaterooms.forEach(s => {
-          deckData.staterooms.push({
-            type: s.querySelector("span").innerText,
-            name: s.innerText
-          });
-        });
-      }
-      temp.deckData.push(deckData);
-    }
-    return temp;
-  }, wait);
+          stateroom.name = s.querySelector("h2.title").innerText;
+          stateroom.description = s.querySelectorAll(".caption")[1].innerHTML.replace(/<strong>|<\/strong>|\\n/, "");
 
-  return {
-    ...basicInfo,
-    ...deckData
-  }
+          temp.staterooms.push(stateroom);
+        });
+
+        const onboardActivities = document.querySelectorAll("[data-oba-carousel=ship_related_onboard] .slick-track a");
+        onboardActivities.forEach(el => {
+          const activity = {
+            link: "",
+            name: "",
+            img: "",
+            type: "",
+          };
+          activity.link = el.href;
+          activity.name = el.querySelector(".oba-car-item-desc-title").innerText;
+          activity.type = el.querySelector(".oba-car-item-desc-incl").innerText;
+          activity.img = window.location.hostname + el.querySelector(".oba-car-item-wrap .oba-car-item-img").style.backgroundImage.slice(4, -1).replace(/"/g, "");
+          temp.onboardActivities.push({
+            link: el.href,
+            name: el.querySelector(".oba-car-item-desc-title").innerText,
+            type: el.querySelector(".oba-car-item-desc-incl").innerText,
+            img: window.location.hostname + el.querySelector("[role=img]").style.backgroundImage.slice(4, -1).replace(/"/g, ""),
+          })
+        });
+
+        const onboardDining = document.querySelectorAll("[data-oba-carousel=ship_related_dining] .slick-track a");
+        onboardDining.forEach(el => {
+          const activity = {
+            link: "",
+            name: "",
+            img: "",
+            type: "",
+          };
+          activity.link = el.href;
+          activity.name = el.querySelector(".oba-car-item-desc-title").innerText;
+          activity.type = el.querySelector(".oba-car-item-desc-incl").innerText;
+          activity.img = window.location.hostname + el.querySelector(".oba-car-item-wrap .oba-car-item-img").style.backgroundImage.slice(4, -1).replace(/"/g, "");
+          temp.onboardDining.push({
+            link: el.href,
+            name: el.querySelector(".oba-car-item-desc-title").innerText,
+            type: el.querySelector(".oba-car-item-desc-incl").innerText,
+            img: window.location.hostname + el.querySelector("[role=img]").style.backgroundImage.slice(4, -1).replace(/"/g, ""),
+          })
+        });
+
+        window.location.hash = "#deckplans";
+
+        return temp;
+      }).catch(() => {});
+
+      await page.waitForFunction(() => {
+        const iframe = document.querySelector('#deckPlansIframe');
+        return iframe.contentWindow.document.querySelector(".ship-decks ul[role=presentation] li[role=listitem]");
+      }).catch({
+        ...basicInfo
+      });
+
+      const cruiseTotalDecks = await page.evaluate(() => {
+        const iframe = document.querySelector("#deckPlansIframe");
+        return iframe.contentWindow.document.querySelectorAll(".ship-decks ul[role=presentation] li[role=listitem]").length;
+      }).catch({
+        ...basicInfo
+      });
+
+      const deckData = [];
+      for (let i = 0; i < cruiseTotalDecks; i++) {
+        await page.evaluate(i => {
+          const iframe = document.querySelector("#deckPlansIframe");
+          const decks = iframe.contentWindow.document.querySelectorAll(".ship-decks ul[role=presentation] li[role=listitem]");
+          decks[i].querySelector('a[role=application]').click();
+        }, i).catch({
+          ...basicInfo,
+          deckData
+        });
+        await page.waitForFunction(() => {
+          const iframe = document.querySelector("#deckPlansIframe");
+          return iframe.contentWindow.document.querySelector("img.mapster_el");
+        }, {}).catch({
+          ...basicInfo,
+          deckData
+        });
+        const data = await page.evaluate((i) => {
+          const deckData = {
+            deckNumber: 0,
+            name: "",
+            img: ""
+          }
+          const iframe = document.querySelector("#deckPlansIframe");
+          const decks = iframe.contentWindow.document.querySelectorAll(".ship-decks ul[role=presentation] li[role=listitem]");
+          deckData.deckNumber = Number(decks[i].querySelector("a[role=application] span").innerText);
+          deckData.name = decks[i].querySelector("a[role=application]").innerText;
+          deckData.img = iframe.contentWindow.document.querySelector("img.mapster_el").src;
+
+          deckFeatures = iframe.contentWindow.document.querySelectorAll(".deck-legend ul.galleries li");
+          deckStaterooms = iframe.contentWindow.document.querySelectorAll(".deck-legend ul.staterooms li");
+          if (deckFeatures.length) {
+            deckData.features = [];
+            deckFeatures.forEach(f => {
+              deckData.features.push({
+                name: f.querySelector("a").innerText
+              });
+            });
+          }
+          if (deckStaterooms.length) {
+            deckData.staterooms = [];
+            deckStaterooms.forEach(s => {
+              deckData.staterooms.push({
+                type: s.querySelector("span").innerText,
+                name: s.innerText
+              });
+            });
+          }
+          return deckData;
+        }, i).catch({
+          ...basicInfo,
+          deckData
+        });
+        deckData.push(data);
+      };
+
+      resolve({
+        ...basicInfo,
+        deckData
+      });
+    } catch (error) {
+      reject(error);
+    }
+  });
 }
 
-const getEachCruiseData = async (browser, dataList, unlimited, limit, waitTime) => {
+const getDataFromPageTypeTwo = async (page) => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      await Promise.all([
+        page.waitForSelector(".ships-gallery-slide"),
+        page.waitForSelector("#ships-main-nav h2 a"),
+        page.waitForSelector(".deck-plans .ships-button"),
+        page.waitForSelector(".ships-deck-plan-slide__iframe")
+      ]).catch(() => reject({}));
+
+      const basicInfo = await page.evaluate(async () => {
+        const temp = {
+          description: [],
+          deckZones: [],
+          staterooms: [],
+          onboardActivities: [],
+          onboardDining: [],
+        };
+        var waitFor = (delay) => {
+          return new Promise(resolve => setTimeout(resolve, delay));
+        }
+
+        const shipDataElements = document.querySelectorAll(".ships-gallery-slide");
+        const pageNavs = document.querySelectorAll("#ships-main-nav h2 a");
+        let index = 0;
+        for (const el of shipDataElements) {
+          pageNavs[index].click();
+          await waitFor(500);
+          const articles = el.querySelectorAll("article");
+          var getBasicData = (propertyName, articleElement, articleIndex) => {
+            let images = el.querySelectorAll("figure.ships-gallery-tile__hero");
+            const introSlide = el.querySelectorAll(".ships-intro-slide");
+            if (introSlide.length) {
+              images = [
+                introSlide[0],
+                ...images
+              ]
+            }
+            temp[propertyName].push({
+              title: articleElement.querySelector(".ships-gallery-tile__content h3.ships-gallery-tile__title").innerText,
+              info: articleElement.querySelector(".ships-gallery-tile__content .ships-gallery-tile__description").innerText,
+              img: window.location.hostname + images[articleIndex].style.backgroundImage.slice(4, -1).replace(/"/g, ""),
+            });
+          }
+          articles.forEach((a, articleIndex) => {
+            if (a.querySelector(".ships-gallery-tile__content h3.ships-gallery-tile__title")) {
+              if (el.dataset.anchor.includes("meet-")) {
+                getBasicData("description", a, articleIndex);
+              } else if (el.dataset.anchor.includes("zones")) {
+                getBasicData("deckZones", a, articleIndex);
+              } else if (el.dataset.anchor.includes("onboard-activities")) {
+                getBasicData("onboardActivities", a, articleIndex);
+              } else if (el.dataset.anchor.includes("dining")) {
+                getBasicData("onboardDining", a, articleIndex);
+              } else if (el.dataset.anchor.includes("staterooms")) {
+                getBasicData("staterooms", a, articleIndex);
+              }
+            }
+          });
+          index++;
+        };
+
+        window.location.hash = "#deck-plans";
+        await waitFor(500);
+        document.querySelector(".deck-plans .ships-button").click();
+
+        return temp;
+      }).catch(() => reject({}));
+
+      await page.waitForFunction(() => {
+        const iframe = document.querySelector('.ships-deck-plan-slide__iframe iframe');
+        return iframe.contentWindow.document.querySelector(".ship-decks ul[role=presentation] li[role=listitem]");
+      }).catch(() => reject({
+        ...basicInfo
+      }));
+
+      const cruiseTotalDecks = await page.evaluate(() => {
+        const iframe = document.querySelector(".ships-deck-plan-slide__iframe iframe");
+        return iframe.contentWindow.document.querySelectorAll(".ship-decks ul[role=presentation] li[role=listitem]").length;
+      }).catch(() => reject({
+        ...basicInfo
+      }));
+
+      const deckData = [];
+      for (let i = 0; i < cruiseTotalDecks; i++) {
+        await page.evaluate(i => {
+          const iframe = document.querySelector(".ships-deck-plan-slide__iframe iframe");
+          const decks = iframe.contentWindow.document.querySelectorAll(".ship-decks ul[role=presentation] li[role=listitem]");
+          decks[i].querySelector('a[role=application]').click();
+        }, i).catch(() => reject({
+          ...basicInfo,
+          deckData
+        }));
+        await page.waitForFunction(() => {
+          const iframe = document.querySelector(".ships-deck-plan-slide__iframe iframe");
+          return iframe.contentWindow.document.querySelector("img.mapster_el");
+        }, {}).catch(() => reject({
+          ...basicInfo,
+          deckData
+        }));
+        const data = await page.evaluate(i => {
+          const deckData = {
+            deckNumber: 0,
+            name: "",
+            img: ""
+          }
+          const iframe = document.querySelector(".ships-deck-plan-slide__iframe iframe");
+          const decks = iframe.contentWindow.document.querySelectorAll(".ship-decks ul[role=presentation] li[role=listitem]");
+          deckData.deckNumber = Number(decks[i].querySelector("a[role=application] span").innerText);
+          deckData.name = decks[i].querySelector("a[role=application]").innerText;
+          deckData.img = iframe.contentWindow.document.querySelector("img.mapster_el").src;
+
+          deckFeatures = iframe.contentWindow.document.querySelectorAll(".deck-legend ul.galleries li");
+          deckStaterooms = iframe.contentWindow.document.querySelectorAll(".deck-legend ul.staterooms li");
+          if (deckFeatures.length) {
+            deckData.features = [];
+            deckFeatures.forEach(f => {
+              deckData.features.push({
+                name: f.querySelector("a").innerText
+              });
+            });
+          }
+          if (deckStaterooms.length) {
+            deckData.staterooms = [];
+            deckStaterooms.forEach(s => {
+              deckData.staterooms.push({
+                type: s.querySelector("span").innerText,
+                name: s.innerText
+              });
+            });
+          }
+          return deckData;
+        }, i).catch(() => reject({
+          ...basicInfo,
+          deckData
+        }));
+        deckData.push(data);
+      }
+
+      resolve({
+        ...basicInfo,
+        deckData
+      });
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+const getEachCruiseData = async (page, dataList) => {
 
   return new Promise(async (resolve, reject) => {
 
@@ -339,7 +396,6 @@ const getEachCruiseData = async (browser, dataList, unlimited, limit, waitTime) 
       let index = 0;
 
       const getData = async (data) => new Promise(async (resolve, reject) => {
-        const page = await browser.newPage();
         try {
 
           await page.goto(data.link, {
@@ -359,106 +415,61 @@ const getEachCruiseData = async (browser, dataList, unlimited, limit, waitTime) 
           });
 
           if (pageType === 1) {
-            await new Promise((resolve, reject) => {
-              let times = 0;
-              validateElement = async () => {
-                let resolved;
-                try {
-                  resolved = await page.evaluate(() => {
-                    const iframe = document.querySelector("#deckplans .deckplans-widget #deckPlansIframe");
-                    if (iframe && iframe.contentWindow.document.querySelector(".ship-decks ul[role=presentation] li[role=listitem]")) {
-                      return true;
-                    }
-                    return false;
-                  });
-                } catch (error) {
-
-                }
-                times++;
-                if (resolved) {
-                  clearInterval(interval);
-                  resolve();
-                }
-                if (times * 500 > 60000) {
-                  clearInterval(interval);
-                  reject();
-                }
-              };
-              const interval = setInterval(validateElement, 500);
-            });
-            cruiseData = await getDataFromPageTypeOne(page, waitTime);
+            cruiseData = await getDataFromPageTypeOne(page);
           } else {
-            cruiseData = await getDataFromPageTypeTwo(page, waitTime);
+            cruiseData = await getDataFromPageTypeTwo(page);
           }
-
-          await page.close();
 
           resolve(cruiseData);
         } catch (error) {
-          await page.close();
+          await page.reload();
           reject(error);
         }
       });
 
-      const callGetData = (dataToEval = undefined, dataIndex = undefined, lastToEval = undefined) => {
-        if (dataToEval !== undefined && dataIndex !== undefined && lastToEval !== undefined) {
-          getData(dataToEval)
-            .then((cruiseData) => {
+      const callGetData = () => {
+        let lastValue;
 
-              dataList[dataIndex] = {
-                ...dataList[dataIndex],
-                ...cruiseData
-              };
+        dataList.forEach((data, i) => {
+          if (i >= index && i < index + 1) {
 
-              index++;
+            lastValue = index + 1;
+            getData(data)
+              .then((cruiseData) => {
 
-              console.log(index);
-              if (index < dataList.length && index === lastToEval) {
-                callGetData();
-              }
+                dataList[i] = {
+                  ...dataList[i],
+                  ...cruiseData
+                };
 
-              if (index === dataList.length) {
-                resolve();
-              }
-            })
-            .catch((err) => {
-              console.log(err);
-              callGetData(dataToEval, dataIndex, lastToEval);
-            });
-        } else {
-          let lastValue;
-          const maxValue = unlimited ? dataList.length : limit;
+                index++;
 
-          dataList.forEach((data, i) => {
-            if (i >= index && i < index + maxValue) {
+                if (index < dataList.length && index === lastValue) {
+                  callGetData();
+                }
 
-              lastValue = index + maxValue;
-              getData(data)
-                .then((cruiseData) => {
+                if (index === dataList.length) {
+                  resolve();
+                }
+              })
+              .catch((cruiseData) => {
+                dataList[i] = {
+                  ...dataList[i],
+                  ...cruiseData
+                };
 
-                  dataList[i] = {
-                    ...dataList[i],
-                    ...cruiseData
-                  };
+                index++;
 
-                  index++;
+                if (index < dataList.length && index === lastValue) {
+                  callGetData();
+                }
 
-                  console.log(index);
-                  if (index < dataList.length && index === lastValue) {
-                    callGetData();
-                  }
-
-                  if (index === dataList.length) {
-                    resolve();
-                  }
-                })
-                .catch((err) => {
-                  console.log(err);
-                  callGetData(data, i, lastValue);
-                });
-            }
-          });
-        }
+                if (index === dataList.length) {
+                  resolve();
+                }
+              });
+          }
+        });
       }
 
       callGetData();
@@ -474,24 +485,7 @@ const getEachCruiseData = async (browser, dataList, unlimited, limit, waitTime) 
 (async () => {
 
   try {
-    let unlimited = false;
-    let limit = 1;
-    let waitTime = 2000;
-
-    process.argv.forEach(function (val) {
-      if (val.includes("unlimited")) {
-        unlimited = true;
-      }
-      if (val.includes("limit")) {
-        limit = Number(val.split("=")[1]);
-      }
-      if (val.includes("waitTime")) {
-        waitTime = Number(val.split("=")[1]);
-      }
-    });
-
     const browser = await puppeteer.launch({
-      headless: true,
       defaultViewport: null,
       args: [
         '--window-size=1920,1080',
@@ -499,13 +493,15 @@ const getEachCruiseData = async (browser, dataList, unlimited, limit, waitTime) 
       ]
     });
 
-    let cruiseShipsData = await getInfoHomePage(browser);
+    const page = await browser.newPage();
 
-    await getEachCruiseData(browser, cruiseShipsData, unlimited, limit, waitTime);
+    let cruiseShipsData = await getInfoHomePage(page);
 
-    console.log(cruiseShipsData);
+    await getEachCruiseData(page, cruiseShipsData);
 
-    fs.write("data.json", JSON.stringify(cruiseShipsData), "utf8");
+    fs.unlinkSync("data.json");
+
+    fs.writeFileSync("data.json", JSON.stringify(cruiseShipsData), "utf8");
 
     await browser.close();
 
